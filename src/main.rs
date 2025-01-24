@@ -1,19 +1,12 @@
+mod commands;
 mod parsing;
 mod protos;
 
 use clap::Parser;
-use parsing::{Commands, MainParser};
+use commands::command_factory;
+use parsing::MainParser;
 
 fn main() {
     let parser = MainParser::parse();
-
-    match parser.command {
-        Commands::Create { name, path } => {
-            println!("Opening {} {}", name, path)
-        }
-        Commands::Open { file_path } => {
-            println!("File path {}", file_path)
-        }
-        Commands::Config => println!("Config"),
-    }
+    command_factory(parser.command).execute();
 }
