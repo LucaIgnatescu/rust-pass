@@ -3,13 +3,13 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "RustPass")]
 #[command(about = "A rust-based password manager.", long_about = None)]
-pub struct RustPass {
+pub struct MainParser {
     #[command(subcommand)]
-    command: Commands,
+    pub command: Commands,
 }
 
 #[derive(Subcommand)]
-enum Commands {
+pub enum Commands {
     Create {
         #[arg(short, long)]
         name: String,

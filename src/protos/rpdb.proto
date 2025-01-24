@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package main;
+
+import "header.proto";
+import "google/protobuf/timestamp.proto";
+
+message RPDB {
+  // Header
+  header.Header header = 1;
+  // HMAC of header
+  bytes hmac_header = 2;
+  // HMAC block stream
+  bytes body = 3;
+
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp last_modified = 5;
+}
