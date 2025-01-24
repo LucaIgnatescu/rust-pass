@@ -11,7 +11,7 @@ This is a password manager written entirely in Rust. It is modeled after [KeePas
 RustPass works with vaults, which have the `.rpdb` file extension. These hold all the keys, and are stored as protobufs.
 
 - To create a vault, run `rustpass create -n <NAME> -p <PATH>`
-- To open a vault, run `rustpass open`
+- To open a vault, run `rustpass open <FILE>`
 - After opening the vault, it can be navigated with usual UNIX file commands:
     - `cd` to enter subdirectories
     - `ls` to list all keys and directories
