@@ -4,5 +4,6 @@ fn main() {
         .include("src/protos")
         .input("src/protos/header.proto")
         .input("src/protos/rpdb.proto")
+        .input("src/protos/config.proto")
         .run_from_script();
 }

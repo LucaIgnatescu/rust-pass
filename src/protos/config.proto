@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+message Config {
+  uint32 chunk_size = 1;
+  uint32 iterations = 2;
+  uint32 memory = 3;
+  uint32 parallelism = 4;
+}

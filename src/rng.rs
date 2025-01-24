@@ -1,6 +1,6 @@
 use rand::prelude::*;
 
-pub struct Rng {}
+pub struct Rng;
 
 impl Rng {
     pub fn get_master_salt() -> [u8; 32] {
