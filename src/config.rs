@@ -1,5 +1,4 @@
-use super::Executable;
-use anyhow::Result;
+use crate::commands::Executable;
 
 pub struct ConfigCommand {}
 

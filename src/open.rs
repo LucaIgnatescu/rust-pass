@@ -1,4 +1,4 @@
-use super::Executable;
+use crate::commands::Executable;
 
 pub struct OpenCommand {
     file_path: String,
