@@ -5,8 +5,9 @@ mod create;
 mod open;
 
 pub trait Executable {
-    fn execute(&self) {
+    fn execute(&self) -> anyhow::Result<()> {
         println!("Executing...");
+        Ok(())
     }
 }
 

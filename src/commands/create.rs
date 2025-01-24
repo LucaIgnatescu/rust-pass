@@ -1,4 +1,6 @@
 use super::Executable;
+use anyhow::anyhow;
+use std::path::Path;
 
 pub struct CreateCommand {
     name: String,
@@ -12,7 +14,11 @@ impl CreateCommand {
 }
 
 impl Executable for CreateCommand {
-    fn execute(&self) {
-        println!("Executing create...");
+    fn execute(&self) -> anyhow::Result<()> {
+        let file_path = Path::new(&self.path);
+        if file_path.is_file() {
+            return Err(anyhow!("File already exists!"));
+        }
+        return Ok(());
     }
 }

@@ -1,4 +1,5 @@
 use super::Executable;
+use anyhow::Result;
 
 pub struct ConfigCommand {}
 
@@ -8,8 +9,4 @@ impl ConfigCommand {
     }
 }
 
-impl Executable for ConfigCommand {
-    fn execute(&self) {
-        println!("Executing config...");
-    }
-}
+impl Executable for ConfigCommand {}

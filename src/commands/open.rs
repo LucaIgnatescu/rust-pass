@@ -10,8 +10,4 @@ impl OpenCommand {
     }
 }
 
-impl Executable for OpenCommand {
-    fn execute(&self) {
-        println!("Executing open...");
-    }
-}
+impl Executable for OpenCommand {}
