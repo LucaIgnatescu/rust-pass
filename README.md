@@ -2,7 +2,7 @@
 
 ## About
 
-This is a password manager written entirely in Rust. It is modeled after [KeePass](https://keepass.info), but works as a command line interface and has slightly reduced features. 
+This is a password manager written entirely in Rust. It is modeled after [KeePass](https://keepass.info), but works as a more opinionated command line application.  
 
 ***Currently in early development***
 
@@ -10,16 +10,16 @@ This is a password manager written entirely in Rust. It is modeled after [KeePas
 
 RustPass works with vaults, which have the `.rpdb` file extension. These hold all the keys, and are stored as protobufs.
 
-- To create a vault, run `rustpass create -n <NAME> -p <PATH>`.
-- To open a vault, run `rustpass open`.
+- To create a vault, run `rustpass create -n <NAME> -p <PATH>`
+- To open a vault, run `rustpass open`
 - After opening the vault, it can be navigated with usual UNIX file commands:
     - `cd` to enter subdirectories
     - `ls` to list all keys and directories
     - `mkdir` create subdirectories
-    - To get the value associated with a key, use `get <KEYNAME>`. It will be copied to the clipboard and deleted after a set number of seconds.
-- To adjust the configuration, such as the time a value will be kept in the clipboard, run `rustpass config`. Run `rustpass config --help` for more details.
+    - `get <KEYNAME>` to get the value associated with a key. It will be copied to the clipboard and deleted after a set number of seconds
+- To adjust the configuration, such as the time a value will be kept in the clipboard, run `rustpass config`. Run `rustpass config --help` for more details
 
-For more detailed explanations, use `rustpass --help`.
+For more detailed explanations, use `rustpass --help`
 
 ***NOTE*: nested directories are not supported.**
 
@@ -27,7 +27,10 @@ For more detailed explanations, use `rustpass --help`.
 
 ### .rpdb File Format
 
-The `.rpdb` files represent entire vaults. They follow the following structure
+Each `.rpdb` file represens an entire vault. It is encoded as [protobuf](https://protobuf.dev).
+Check the `/src/proto` for the definitions. More details are provided in the Header section. 
+
+General outline of a `.rpdb` file:
 
 1. Header
 1. HMAC-SHA-256 hash of Header. 
@@ -54,7 +57,7 @@ KDF Parameters follow the following structure:
 | Memory | 3 | UInt32 | Memory |
 | Parallelism | 4 | UInt32 | Parallelism |
 
-Everything is encoded as a [protobuf](https://protobuf.dev). Check the `/src/proto` for the definitions.
+Everything is encoded as a 
 
 ### Key Derivation
 
@@ -64,9 +67,9 @@ Everything is encoded as a [protobuf](https://protobuf.dev). Check the `/src/pro
 1. Compute `T`: Transformation of `R` using Argon2d.
 
 Then the rest of the keys are computed as follows:
-1. ChaCha20 (for block encryption): `SHA-256(S ‖ T)`
+1. ChaCha20 key: `SHA-256(S ‖ T)`
 1. HMAC header key: `SHA-512(0xFFFFFFFFFFFFFFFF ‖ SHA-512(S ‖ T ‖ 0x01))`
-1. HMAC block key for block `i`: `SHA-512(i ‖ SHA-512(S ‖ T ‖ 0x01))`
+1. HMAC block key for `i`'th chunk: `SHA-512(i ‖ SHA-512(S ‖ T ‖ 0x01))`
 
 ## Security
 
@@ -74,4 +77,4 @@ Then the rest of the keys are computed as follows:
 
 ### Process Memory Protection
 
-Process memory is encrypted using ChaCha20. Parameters are  generated on every `open`.
+Process memory is encrypted using ChaCha20. Parameters are regenerated on every `open`.
