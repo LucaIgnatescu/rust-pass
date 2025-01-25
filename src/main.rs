@@ -13,10 +13,16 @@ use display::display_error;
 use parsing::MainParser;
 
 fn main() {
-    let parser = MainParser::parse();
-    command_factory(parser.command)
-        .execute()
-        .unwrap_or_else(|e| {
-            display_error(e);
-        })
+    let mut config = config::LocalConfig::new();
+    println!("Init from file...");
+    config.init_from_file().unwrap_or_else(|e| display_error(e));
+    println!("Saving...");
+    config.save().unwrap_or_else(|e| display_error(e));
+    println!("Ran and saved \n\n\n");
+    //let parser = MainParser::parse();
+    //command_factory(parser.command)
+    //    .execute()
+    //    .unwrap_or_else(|e| {
+    //        display_error(e);
+    //    })
 }

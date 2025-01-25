@@ -1,17 +1,18 @@
 use std::{
+    env,
     fs::{create_dir_all, File},
-    io::{Read, Write},
-    path::Path,
+    io::{Read, Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
 };
-
-use protobuf::Message;
 
 use crate::commands::Executable;
 use crate::protos::config::Config;
+use anyhow::anyhow;
+use protobuf::Message;
 
 pub struct ConfigCommand;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct LocalConfig {
     chunk_size: u32,
     iterations: u32,
@@ -52,47 +53,65 @@ impl Default for LocalConfig {
     }
 }
 
+impl Config {
+    pub fn validate(&self) -> Option<()> {
+        [
+            self.parallelism,
+            self.memory,
+            self.iterations,
+            self.chunk_size,
+        ]
+        .iter()
+        .all(|&value| value != 0)
+        .then(|| ())
+    }
+}
+
 impl LocalConfig {
     pub fn new() -> Self {
-        let config_dir = Self::get_config_location();
-        if let Ok(mut config_file) = Self::get_config_file(&config_dir) {
-            let mut buf: Vec<u8> = vec![];
-            if config_file.read(&mut buf).is_err() {
-                return Self::default();
-            }
-            if let Ok(config) = Config::parse_from_bytes(&buf) {
-                return Self::from(config);
-            }
-            return Self::default();
-        }
         Self::default()
+    }
+
+    pub fn init_from_file(&mut self) -> anyhow::Result<()> {
+        let config_dir = Self::get_config_location();
+        let mut config_file = Self::get_config_file(&config_dir)?;
+        let mut buf: Vec<u8> = vec![];
+        config_file.read_to_end(&mut buf)?;
+        let config = Config::parse_from_bytes(&buf)?;
+        config.validate().ok_or(anyhow!("Invalid configuration"))?;
+        *self = Self::from(config);
+        Ok(())
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
         let config: Config = Config::from(*self);
         let buf = config.write_to_bytes()?;
-        let mut config_file = Self::get_config_file(Self::get_config_location())?;
+        let mut config_file = Self::get_config_file(&Self::get_config_location())?;
         config_file
             .write(&buf)
             .map(|_| ())
             .map_err(|e| anyhow::Error::from(e))
     }
 
-    fn get_config_location() -> &'static Path {
+    fn get_config_location() -> PathBuf {
         #[cfg(target_os = "macos")] // TODO: Add more configs
         {
-            return Path::new("/Library/Application Support/RustPass");
+            let usr = env::var("HOME").unwrap(); // TODO: could be more graceful
+            PathBuf::from(usr).join("Library/Application Support/RustPass")
         }
         //panic!("Could not retrieve config directory");
     }
 
-    fn get_config_file(config_dir_path: &Path) -> anyhow::Result<File> {
+    fn get_config_file(config_dir_path: &PathBuf) -> anyhow::Result<File> {
         if !config_dir_path.exists() {
             create_dir_all(config_dir_path)?;
         }
         let config_file_path = config_dir_path.join("config.txt");
         if config_file_path.exists() {
-            return Ok(File::open(config_file_path)?);
+            return Ok(File::options()
+                .read(true)
+                .write(true)
+                .open(config_file_path)?);
         }
         Ok(File::create_new(config_file_path)?)
     }
