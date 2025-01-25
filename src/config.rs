@@ -1,8 +1,8 @@
 use std::{
     env,
     fs::{create_dir_all, File},
-    io::{Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    io::{Read, Write},
+    path::PathBuf,
 };
 
 use crate::commands::Executable;
@@ -12,10 +12,10 @@ use protobuf::Message;
 
 pub struct ConfigCommand;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LocalConfig {
     chunk_size: u32,
-    pub iterations: u32,
+    iterations: u32,
     memory: u32,
     parallelism: u32,
 }
@@ -122,5 +122,20 @@ impl ConfigCommand {
         ConfigCommand {}
     }
 }
-
 impl Executable for ConfigCommand {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_save_restore() {
+        let mut want = LocalConfig::new();
+        want.iterations = 5;
+        want.save().unwrap();
+
+        let mut config = LocalConfig::new();
+        config.init_from_file().unwrap();
+        assert_eq!(config, want);
+    }
+}
