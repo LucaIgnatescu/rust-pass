@@ -15,7 +15,7 @@ pub struct ConfigCommand;
 #[derive(Clone, Copy, Debug)]
 pub struct LocalConfig {
     chunk_size: u32,
-    iterations: u32,
+    pub iterations: u32,
     memory: u32,
     parallelism: u32,
 }
