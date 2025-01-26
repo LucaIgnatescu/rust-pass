@@ -52,10 +52,10 @@ KDF Parameters follow the following structure:
 
 | Name | ID | Type | Description|
 |:-----|:---:|:-----:|:-----------|
-| Salt | 1 | Byte[] | Salt |
-| Iterations | 2 | UInt32 | # iterations |
-| Memory | 3 | UInt32 | Memory |
-| Parallelism | 4 | UInt32 | Parallelism |
+| Iterations | 1 | UInt32 | # iterations |
+| Memory | 2 | UInt32 | Memory |
+| Parallelism | 3 | UInt32 | Parallelism |
+| Salt | 4 | Byte[] | Salt |
 
 Everything is encoded as a 
 

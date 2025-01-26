@@ -14,10 +14,10 @@ pub struct ConfigCommand;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LocalConfig {
-    chunk_size: u32,
-    iterations: u32,
-    memory: u32,
-    parallelism: u32,
+    pub chunk_size: u32,
+    pub iterations: u32,
+    pub memory: u32,
+    pub parallelism: u32,
 }
 
 impl From<LocalConfig> for Config {

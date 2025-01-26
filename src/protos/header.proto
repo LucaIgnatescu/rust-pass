@@ -19,7 +19,8 @@ message Header {
 
 message KDFParams {
   // Add fields specific to argon2 key derivation parameters here
-  uint32 memory_cost = 1;
+  uint32 memory = 1;
   uint32 iterations = 2;
   uint32 parallelism = 3;
+  bytes salt = 4;
 }

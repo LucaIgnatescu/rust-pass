@@ -5,7 +5,6 @@ mod display;
 mod open;
 mod parsing;
 mod protos;
-mod rng;
 
 use clap::Parser;
 use commands::command_factory;

@@ -1,9 +1,10 @@
-use crate::{
-    commands::Executable,
-    protos::{header::Header, rpdb::RPDB},
-};
+use crate::{commands::Executable, protos::rpdb::RPDB};
 use anyhow::anyhow;
-use std::{fs::File, path::Path};
+use nix::sys::termios::{tcgetattr, tcsetattr, LocalFlags};
+use std::{
+    io::{stdin, stdout, Write},
+    path::Path,
+};
 
 pub struct CreateCommand {
     name: String,
@@ -22,15 +23,27 @@ impl Executable for CreateCommand {
         if file_path.is_file() {
             return Err(anyhow!("Could not create database - file already exists!"));
         }
-        let f =
-            File::create_new(file_path).map_err(|e| anyhow!("Could not create database - {}", e));
-
+        let buf = read_password()?;
+        println!("Password is {buf}");
         return Ok(());
     }
 }
 
-//fn create_vault() -> anyhow::Result<RPDB> {
-//    let mut header = Header::new();
-//    header.signature = 0x3AF9C42;
-//    header.version = 0x0001;
-//}
+fn read_password() -> anyhow::Result<String> {
+    let in_fd = stdin();
+    let mut term = tcgetattr(&in_fd)?;
+    print!("Please enter a master password: ");
+    term.local_flags &= !LocalFlags::ECHO;
+    tcsetattr(&in_fd, nix::sys::termios::SetArg::TCSANOW, &term)?;
+    stdout().flush()?;
+
+    let mut buf = String::new();
+    in_fd.read_line(&mut buf)?;
+    println!();
+    Ok(buf)
+}
+
+fn initialize_vault() -> anyhow::Result<RPDB> {
+    let rpdb = RPDB::new();
+    Ok(rpdb)
+}

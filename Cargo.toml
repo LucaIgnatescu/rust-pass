@@ -6,8 +6,9 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.95"
 clap = { version = "4.5.27", features = ["derive"] }
+nix = { version = "0.29.0", features = ["term"] }
 protobuf = "3.7.1"
-rand = "0.8.5"
+ring = "0.17.8"
 
 [build-dependencies]
 protobuf-codegen = "3.7.1"
