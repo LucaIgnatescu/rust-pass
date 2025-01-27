@@ -1,18 +1,34 @@
 syntax = "proto3";
 
-package main;
-
-import "header.proto";
 import "google/protobuf/timestamp.proto";
 
-message RPDB {
-  // Header
-  header.Header header = 1;
-  // HMAC of header
-  bytes hmac_header = 2;
-  // HMAC block stream
-  bytes body = 3;
+message Header {
+  // Signature must be 0x3A7F9C42
+  uint32 signature = 1;
+  // Salt for computing keys
+  bytes master_salt = 2;
+  // Version number: 16 bits for the major version, 16 for the minor
+  uint32 version = 3;
+}
 
-  google.protobuf.Timestamp created_at = 4;
-  google.protobuf.Timestamp last_modified = 5;
+message Record {
+  string name = 1;
+  bytes data = 2;
+}
+
+message Directory {
+  string name = 1;
+  repeated Record records = 2;
+}
+
+message Body {
+  bytes salt = 1;
+  repeated Directory directories = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp last_modified = 4;
+}
+
+message RPDB {
+  Header header = 1;
+  bytes body = 2;
 }
