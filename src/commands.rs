@@ -1,11 +1,12 @@
 use std::fs::File;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::path::Path;
 
 use anyhow::anyhow;
 use argon2::Argon2;
 use protobuf::well_known_types::timestamp::Timestamp;
-use protobuf::MessageField;
-use ring::aead::{LessSafeKey, UnboundKey, AES_256_GCM, NONCE_LEN};
+use protobuf::{Message, MessageField};
+use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
 use ring::digest::SHA256_OUTPUT_LEN;
 use ring::error::Unspecified;
 use ring::hkdf::{Salt, HKDF_SHA256};
@@ -15,7 +16,7 @@ use crate::config::ConfigCommand;
 use crate::create::CreateCommand;
 use crate::open::OpenCommand;
 use crate::parsing::Commands;
-use crate::protos::rpdb::{Body, Header};
+use crate::protos::rpdb::{Body, Header, RPDB};
 
 pub trait Executable {
     fn execute(&self) -> anyhow::Result<()> {
@@ -57,13 +58,21 @@ impl KeyGen {
         Ok(key)
     }
 
-    pub fn derive_key(key: &[u8], salt: &SaltBuffer) -> Result<LessSafeKey, Unspecified> {
+    pub fn derive_key(key: &[u8], salt: &[u8]) -> anyhow::Result<LessSafeKey> {
+        if salt.len() != SHA256_OUTPUT_LEN {
+            return Err(anyhow!("Invalid salt length"));
+        }
+
         let salt = Salt::new(HKDF_SHA256, salt);
         let prk = salt.extract(key);
-        let okm = prk.expand(&INFO, HKDF_SHA256)?;
+        let okm = prk
+            .expand(&INFO, HKDF_SHA256)
+            .map_err(|_| anyhow!("Could not expand prk"))?;
         let mut buf = SaltBuffer::default();
-        okm.fill(&mut buf)?;
-        let unbound = UnboundKey::new(&AES_256_GCM, &buf)?;
+        okm.fill(&mut buf)
+            .map_err(|_| anyhow!("Could not fill buffer"))?;
+        let unbound = UnboundKey::new(&AES_256_GCM, &buf)
+            .map_err(|_| anyhow!("Could not create UnboundKey"))?;
         Ok(LessSafeKey::new(unbound))
     }
 
@@ -75,10 +84,11 @@ impl KeyGen {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct VaultManager {
     header: Header,
     body: Body,
+    master_hash: MasterBuffer,
 }
 
 #[derive(Default, Debug)]
@@ -108,32 +118,65 @@ impl Salts {
 }
 
 impl VaultManager {
-    pub fn initialize_vault(&mut self, salts: Salts) -> anyhow::Result<()> {
-        self.header.signature = 0x3af9c42;
+    fn encrypt(&self) -> anyhow::Result<RPDB> {
+        let key = KeyGen::derive_key(&self.master_hash, &self.header.master_salt)?;
+        let nonce = Nonce::assume_unique_for_key(self.header.master_nonce.as_slice().try_into()?);
+        let aad = Aad::from(self.header.write_to_bytes()?);
+        let mut rpdb = RPDB::new();
+        rpdb.body = self.body.write_to_bytes()?;
+        key.seal_in_place_append_tag(nonce, aad, &mut rpdb.body)
+            .map_err(|_| anyhow!("Could not seal body"))?;
+        rpdb.header = MessageField::some(self.header.clone());
+        Ok(rpdb)
+    }
 
+    pub fn initialize_from_file<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        master_key: String,
+    ) -> anyhow::Result<()> {
+        let mut buf: Vec<u8> = vec![];
+        let mut file = File::open(path)?;
+        let bytes_read = file.read_to_end(&mut buf)?;
+        if bytes_read == 0 {
+            return Err(anyhow!("Read 0 bytes from file"));
+        }
+        let mut rpdb = RPDB::parse_from_bytes(&buf)?;
+        self.header = rpdb
+            .header
+            .into_option()
+            .ok_or(anyhow!("Could not parse header"))?;
+
+        self.master_hash =
+            KeyGen::encrypt_master(master_key, self.header.argon_salt.as_slice().try_into()?)?;
+
+        let nonce = Nonce::assume_unique_for_key(self.header.master_nonce.as_slice().try_into()?);
+        let key = KeyGen::derive_key(&self.master_hash, &self.header.master_salt)?;
+        let aad = Aad::from(self.header.write_to_bytes()?);
+        let decrypted_body = key
+            .open_in_place(nonce, aad, &mut rpdb.body)
+            .map_err(|_| anyhow!("Could not decrypt body"))?;
+        self.body = Body::parse_from_bytes(decrypted_body)?;
+        Ok(())
+    }
+
+    pub fn initialize_new(&mut self, salts: Salts, master_key: String) -> anyhow::Result<()> {
+        self.header.signature = 0x3af9c42;
         self.header.master_salt = salts.master_salt.to_vec();
         self.header.version = 0x0001;
         self.header.master_nonce = salts.master_nonce.to_vec();
         self.header.argon_salt = salts.argon_salt.to_vec();
-
         self.body.salt = salts.body_salt.to_vec();
         self.body.created_at = MessageField::some(Timestamp::now());
         self.body.last_modified = MessageField::some(Timestamp::now());
-
-        //let mut rpdb = RPDB::new();
-        //let nonce = Nonce::assume_unique_for_key(*salts.master_nonce);
-        //let buf = header.write_to_bytes()?;
-
-        //let key = KeyGen::derive_key(master_hash, salts.master_salt)?;
-        //key.seal_in_place_append_tag(nonce, Aad::from(buf), &mut rpdb.body)
-        //    .map_err(|_| anyhow!("Could not seal header"))?;
-        //rpdb.header = MessageField::some(header);
-
+        self.master_hash = KeyGen::encrypt_master(master_key, &salts.argon_salt)?;
         Ok(())
     }
 
-    pub fn save(&self, location: PathBuf) -> anyhow::Result<()> {
-        unimplemented!()
+    pub fn save_new<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+        let mut file = File::create_new(path)?;
+        file.write(&self.encrypt()?.write_to_bytes()?)?;
+        Ok(())
     }
 
     pub fn regenerate(&mut self) -> anyhow::Result<()> {
@@ -145,8 +188,34 @@ impl VaultManager {
     }
 }
 
-impl From<File> for VaultManager {
-    fn from(value: File) -> Self {
-        unimplemented!()
+#[cfg(test)]
+mod test {
+    use nix::libc::write;
+
+    use super::{Salts, VaultManager};
+    use std::{env, fs::remove_file};
+
+    #[test]
+    fn test_init_save_open() {
+        let master_password = "abcdefgh";
+        let mut vm = VaultManager::default();
+        let salts = Salts::new().unwrap();
+        vm.initialize_new(salts, String::from(master_password))
+            .unwrap();
+
+        let current_dir = env::current_dir().unwrap();
+        let file_path = current_dir.join("test.rpdb");
+
+        if file_path.exists() {
+            remove_file(&file_path).unwrap();
+        }
+
+        vm.save_new(&file_path).unwrap();
+
+        let mut vm1 = VaultManager::default();
+        vm1.initialize_from_file(&file_path, String::from(master_password))
+            .unwrap();
+
+        assert_eq!(vm, vm1);
     }
 }

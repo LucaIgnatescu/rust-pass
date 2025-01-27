@@ -1,15 +1,6 @@
-use crate::{
-    commands::{Executable, KeyGen, Salts, VaultManager},
-    protos::rpdb::RPDB,
-};
+use crate::commands::{Executable, Salts, VaultManager};
 use anyhow::anyhow;
 use nix::sys::termios::{tcgetattr, tcsetattr, LocalFlags};
-use ring::{
-    aead::{LessSafeKey, NONCE_LEN},
-    digest::SHA256_OUTPUT_LEN,
-    hkdf::{Salt, HKDF_SHA256},
-    rand::{SecureRandom, SystemRandom},
-};
 use std::{
     io::{stdin, stdout, Write},
     path::Path,
@@ -32,11 +23,12 @@ impl Executable for CreateCommand {
         if file_path.is_file() {
             return Err(anyhow!("Could not create database - file already exists!"));
         }
-        let rng = SystemRandom::new();
+
         let buf = read_password()?;
+
         let salts = Salts::new()?;
+
         let mut vm = VaultManager::default();
-        vm.initialize_vault(salts)?;
 
         println!("vault: {:?}", vm);
 
