@@ -1,4 +1,4 @@
-use ring::aead::{LessSafeKey, Nonce, NonceSequence, UnboundKey, AES_128_GCM, NONCE_LEN};
+use ring::aead::{LessSafeKey, UnboundKey, AES_128_GCM, AES_256_GCM};
 use ring::digest::SHA256_OUTPUT_LEN;
 use ring::error::Unspecified;
 use ring::hkdf::{Salt, HKDF_SHA256};
@@ -23,16 +23,13 @@ pub fn command_factory(command: Commands) -> Box<dyn Executable> {
     }
 }
 
-struct Keygen;
 static INFO: [&[u8]; 1] = ["".as_bytes()]; // TODO: Look into this
 
-impl Keygen {
-    pub fn get_main_key(master_key: &String, salt: Salt) -> Result<LessSafeKey, Unspecified> {
-        let prk = salt.extract(master_key.clone().as_bytes());
-        let okm = prk.expand(&INFO, HKDF_SHA256)?;
-        let mut buf = vec![0u8; SHA256_OUTPUT_LEN];
-        okm.fill(&mut buf)?;
-        let unbound = UnboundKey::new(&AES_128_GCM, &buf)?;
-        Ok(LessSafeKey::new(unbound))
-    }
+pub fn get_main_key(master_key: &String, salt: &Salt) -> Result<LessSafeKey, Unspecified> {
+    let prk = salt.extract(master_key.clone().as_bytes());
+    let okm = prk.expand(&INFO, HKDF_SHA256)?;
+    let mut buf = vec![0u8; SHA256_OUTPUT_LEN];
+    okm.fill(&mut buf)?;
+    let unbound = UnboundKey::new(&AES_256_GCM, &buf)?;
+    Ok(LessSafeKey::new(unbound))
 }
