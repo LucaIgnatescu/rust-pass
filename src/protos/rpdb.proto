@@ -7,8 +7,9 @@ message Header {
   uint32 signature = 1;
   // Salt for computing keys
   bytes master_salt = 2;
-  // Version number: 16 bits for the major version, 16 for the minor
-  uint32 version = 3;
+  bytes master_nonce = 3;
+  bytes argon_salt = 4;
+  uint32 version = 5;
 }
 
 message Record {
