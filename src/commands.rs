@@ -16,7 +16,7 @@ use crate::config::ConfigCommand;
 use crate::create::CreateCommand;
 use crate::open::OpenCommand;
 use crate::parsing::Commands;
-use crate::protos::rpdb::{Body, Header, RPDB};
+use crate::protos::rpdb::{Body, Directory, Header, RPDB};
 
 pub trait Executable {
     fn execute(&self) -> anyhow::Result<()> {
@@ -160,7 +160,7 @@ impl VaultManager {
         Ok(())
     }
 
-    pub fn initialize_new(&mut self, salts: Salts, master_key: String) -> anyhow::Result<()> {
+    pub fn regenerate(&mut self, salts: Salts, master_key: String) -> anyhow::Result<()> {
         self.header.signature = 0x3af9c42;
         self.header.master_salt = salts.master_salt.to_vec();
         self.header.version = 0x0001;
@@ -179,19 +179,38 @@ impl VaultManager {
         Ok(())
     }
 
-    pub fn regenerate(&mut self) -> anyhow::Result<()> {
-        unimplemented!()
-    }
-
     pub fn add_directory(&mut self) -> anyhow::Result<()> {
         unimplemented!()
     }
 }
 
+pub struct DirectoryManager<'a> {
+    directory: &'a Directory,
+}
+
+// Generator for nonces of
+pub struct NonceGenerator {
+    salt: SaltBuffer,
+}
+
+impl NonceGenerator {
+    pub fn new(salt: SaltBuffer) -> Self {
+        Self { salt }
+    }
+
+    pub fn generate(&self, directory_name: &str, index: u32) -> anyhow::Result<Nonce> {
+        let mut key_buf = NonceBuffer::default();
+        let mut salt: Vec<u8> = directory_name.as_bytes().to_vec();
+        salt.extend_from_slice(&self.salt);
+        Argon2::default()
+            .hash_password_into(&index.to_le_bytes(), &self.salt, &mut key_buf)
+            .map_err(|_| anyhow!("Could not generate argon2 hash"))?;
+        Ok(Nonce::assume_unique_for_key(key_buf))
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use nix::libc::write;
-
     use super::{Salts, VaultManager};
     use std::{env, fs::remove_file};
 
@@ -200,8 +219,7 @@ mod test {
         let master_password = "abcdefgh";
         let mut vm = VaultManager::default();
         let salts = Salts::new().unwrap();
-        vm.initialize_new(salts, String::from(master_password))
-            .unwrap();
+        vm.regenerate(salts, String::from(master_password)).unwrap();
 
         let current_dir = env::current_dir().unwrap();
         let file_path = current_dir.join("test.rpdb");
