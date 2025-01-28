@@ -8,7 +8,6 @@ use protobuf::{well_known_types::timestamp::Timestamp, Message, MessageField};
 use ring::{
     aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN},
     digest::SHA256_OUTPUT_LEN,
-    error::Unspecified,
     hkdf::{Salt, HKDF_SHA256},
     rand::{SecureRandom, SystemRandom},
 };
@@ -83,7 +82,7 @@ impl KeyGen {
         let mut buf = NonceBuffer::default();
         let rng = SystemRandom::new();
         rng.fill(&mut buf)
-            .map(|_| anyhow!("Coult not generate nonce"));
+            .map_err(|_| anyhow!("Coult not generate nonce"))?;
         Ok(buf)
     }
 }
@@ -164,7 +163,8 @@ impl VaultManager {
         Ok(())
     }
 
-    pub fn regenerate(&mut self, salts: Salts, master_key: String) -> Result<()> {
+    pub fn regenerate(&mut self, master_key: String) -> Result<()> {
+        let salts = Salts::new()?;
         self.header.signature = 0x3af9c42;
         self.header.master_salt = salts.master_salt.to_vec();
         self.header.version = 0x0001;
@@ -186,33 +186,100 @@ impl VaultManager {
     pub fn add_directory(&mut self, name: &str) -> () {
         let mut dir = Directory::new();
         dir.name = name.into();
+        self.body.directories.push(dir);
+    }
+
+    pub fn remove_directory(&mut self, name: &str) -> Result<()> {
+        if let Some(index) = self
+            .body
+            .directories
+            .iter()
+            .position(|dir| dir.name == name)
+        {
+            self.body.directories.remove(index);
+            return Ok(());
+        }
+        Err(anyhow!("Directory does not exist"))
+    }
+
+    pub fn add_key(&mut self, dir_name: &str, key_name: &str, key_val: &str) -> Result<()> {
+        if let Some(dir) = self
+            .body
+            .directories
+            .iter_mut()
+            .find(|dir| dir.name == dir_name)
+        {
+            let mut dm = DirectoryManager::new(
+                dir,
+                self.body.salt.as_slice().try_into()?,
+                &self.master_hash,
+            );
+            return dm.add_record(key_name, key_val);
+        }
+        Err(anyhow!("Could not locate directory"))
+    }
+
+    pub fn remove_key(&mut self, dir_name: &str, key_name: &str) -> Result<()> {
+        if let Some(dir) = self
+            .body
+            .directories
+            .iter_mut()
+            .find(|dir| dir.name == dir_name)
+        {
+            let mut dm = DirectoryManager::new(
+                dir,
+                self.body.salt.as_slice().try_into()?,
+                &self.master_hash,
+            );
+            return dm.remove_record(key_name);
+        }
+        Err(anyhow!("Could not locate directory"))
+    }
+
+    pub fn get_key(&mut self, dir_name: &str, key_name: &str) -> Result<String> {
+        if let Some(dir) = self
+            .body
+            .directories
+            .iter_mut()
+            .find(|dir| dir.name == dir_name)
+        {
+            let mut dm = DirectoryManager::new(
+                dir,
+                self.body.salt.as_slice().try_into()?,
+                &self.master_hash,
+            );
+            return dm.get_record(key_name);
+        }
+        Err(anyhow!("Could not locate directory"))
     }
 }
 
 struct DirectoryManager<'a> {
     dir: &'a mut Directory,
     salt: &'a SaltBuffer,
-    key: &'a KeyBuffer,
+    master_key: &'a KeyBuffer,
 }
 
 impl<'a> DirectoryManager<'a> {
     pub fn new(dir: &'a mut Directory, salt: &'a SaltBuffer, key: &'a KeyBuffer) -> Self {
-        Self { dir, salt, key }
+        Self {
+            dir,
+            salt,
+            master_key: key,
+        }
     }
 
-    pub fn add_record(&mut self, name: &str, mut key_val: String) -> Result<()> {
+    pub fn add_record(&mut self, name: &str, key_val: &str) -> Result<()> {
         let nonce_buf = generate_nonce_buf(self.salt, &self.dir.name, self.dir.records.len())?;
-        let key = KeyGen::derive_key(self.key, self.salt)?;
+        let key = KeyGen::derive_key(self.master_key, self.salt)?;
         let nonce = Nonce::assume_unique_for_key(nonce_buf);
         let aad = Aad::from(name);
-
         let mut buf: Vec<u8> = key_val.into();
         key.seal_in_place_append_tag(nonce, aad, &mut buf)
             .map_err(|_| anyhow!("Could not seal key"))?;
-
         let mut record = Record::new();
         record.name = name.into();
-        record.nonce = String::from_utf8(nonce_buf.into())?;
+        record.nonce = nonce_buf.into();
         record.data = buf.into();
 
         self.dir.records.push(record);
@@ -220,20 +287,39 @@ impl<'a> DirectoryManager<'a> {
         Ok(())
     }
 
-    fn encrypt_key(&self, key_val: String) -> Result<Vec<u8>> {
-        let nonce = Nonce::assume_unique_for_key(generate_nonce_buf(
-            self.salt,
-            &self.dir.name,
-            self.dir.records.len(),
-        )?);
-        let key = KeyGen::derive_key(self.key, self.salt)?;
-        let aad = Aad::from(&self.dir.name);
+    pub fn get_record(&mut self, name: &str) -> Result<String> {
+        let index = self
+            .dir
+            .records
+            .iter()
+            .position(|record| record.name == name)
+            .ok_or(anyhow!("Key does not exist"))?;
 
-        let mut buf: Vec<u8> = key_val.into();
-        key.seal_in_place_append_tag(nonce, aad, &mut buf)
-            .map_err(|_| anyhow!("Could not seal key"))?;
+        let record = &self.dir.records[index];
+        let nonce = Nonce::assume_unique_for_key(record.nonce.as_slice().try_into()?);
+        let aad = Aad::from(name);
+        let key = KeyGen::derive_key(self.master_key, self.salt)?;
+        let mut buf: Vec<u8> = record.data.clone();
 
-        Ok(buf)
+        let decrypted = key
+            .open_in_place(nonce, aad, &mut buf)
+            .map_err(|_| anyhow!("Could not open key"))?;
+
+        Ok(String::from_utf8(decrypted.to_vec())?)
+    }
+    pub fn remove_record(&mut self, name: &str) -> Result<()> {
+        let index = self
+            .dir
+            .records
+            .iter()
+            .position(|record| record.name == name)
+            .ok_or(anyhow!("Key does not exist"))?;
+        self.dir.records.remove(index);
+        Ok(())
+    }
+
+    pub fn rename(&mut self, new_name: &str) {
+        self.dir.name = new_name.into();
     }
 }
 
@@ -253,15 +339,14 @@ pub fn generate_nonce_buf(
 
 #[cfg(test)]
 mod test {
-    use super::{Salts, VaultManager};
+    use super::VaultManager;
     use std::{env, fs::remove_file};
 
     #[test]
     fn test_init_save_open() {
         let master_password = "abcdefgh";
         let mut vm = VaultManager::default();
-        let salts = Salts::new().unwrap();
-        vm.regenerate(salts, String::from(master_password)).unwrap();
+        vm.regenerate(String::from(master_password)).unwrap();
 
         let current_dir = env::current_dir().unwrap();
         let file_path = current_dir.join("test.rpdb");
@@ -277,5 +362,22 @@ mod test {
             .unwrap();
 
         assert_eq!(vm, vm1);
+    }
+    #[test]
+    fn test_directory_add_key() {
+        let master_password = "abcdefgh";
+        let dir_name = "test";
+        let mut vm = VaultManager::default();
+        vm.regenerate(String::from(master_password)).unwrap();
+        vm.add_directory(&dir_name);
+        vm.add_key(&dir_name, "aaa", "abc").unwrap();
+
+        let buf = vm.get_key(dir_name, "aaa").unwrap();
+
+        assert_eq!(buf, "abc");
+
+        vm.remove_key(dir_name, "aaa").unwrap();
+        assert!(vm.get_key(dir_name, "aaa").is_err());
+        vm.remove_directory(dir_name).unwrap();
     }
 }
