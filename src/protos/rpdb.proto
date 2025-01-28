@@ -14,7 +14,8 @@ message Header {
 
 message Record {
   string name = 1;
-  bytes data = 2;
+  string nonce = 2;
+  bytes data = 3;
 }
 
 message Directory {

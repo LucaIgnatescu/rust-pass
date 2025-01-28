@@ -2,24 +2,28 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Ok, Result};
 use argon2::Argon2;
-use protobuf::well_known_types::timestamp::Timestamp;
-use protobuf::{Message, MessageField};
-use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN};
-use ring::digest::SHA256_OUTPUT_LEN;
-use ring::error::Unspecified;
-use ring::hkdf::{Salt, HKDF_SHA256};
-use ring::rand::{SecureRandom, SystemRandom};
+use protobuf::{well_known_types::timestamp::Timestamp, Message, MessageField};
+use ring::{
+    aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN},
+    digest::SHA256_OUTPUT_LEN,
+    error::Unspecified,
+    hkdf::{Salt, HKDF_SHA256},
+    rand::{SecureRandom, SystemRandom},
+};
 
-use crate::config::ConfigCommand;
-use crate::create::CreateCommand;
-use crate::open::OpenCommand;
-use crate::parsing::Commands;
-use crate::protos::rpdb::{Body, Directory, Header, RPDB};
+use crate::protos::rpdb::Record;
+use crate::{
+    config::ConfigCommand,
+    create::CreateCommand,
+    open::OpenCommand,
+    parsing::Commands,
+    protos::rpdb::{Body, Directory, Header, RPDB},
+};
 
 pub trait Executable {
-    fn execute(&self) -> anyhow::Result<()> {
+    fn execute(&self) -> Result<()> {
         println!("Executing...");
         Ok(())
     }
@@ -39,26 +43,25 @@ static INFO: [&[u8]; 1] = ["".as_bytes()]; // TODO: Look into this
 
 pub type SaltBuffer = [u8; SHA256_OUTPUT_LEN];
 pub type NonceBuffer = [u8; NONCE_LEN];
-pub type MasterBuffer = [u8; SHA256_OUTPUT_LEN];
+pub type KeyBuffer = [u8; SHA256_OUTPUT_LEN];
+
+fn erase<T: Into<Vec<u8>>>(s: T) {
+    let mut buffer: Vec<u8> = s.into();
+    buffer.fill(0);
+}
 
 impl KeyGen {
-    pub fn encrypt_master(
-        mut master_key: String,
-        salt: &SaltBuffer,
-    ) -> anyhow::Result<MasterBuffer> {
+    pub fn encrypt_master(mut master_key: String, salt: &SaltBuffer) -> Result<KeyBuffer> {
         let mut key = SaltBuffer::default();
         Argon2::default()
             .hash_password_into(&master_key.as_bytes(), salt, &mut key)
             .map_err(|_| anyhow!("Could not generate argon2 hash"))?;
 
-        unsafe {
-            let buffer = master_key.as_mut_vec();
-            buffer.fill(0);
-        }
+        erase(master_key);
         Ok(key)
     }
 
-    pub fn derive_key(key: &[u8], salt: &[u8]) -> anyhow::Result<LessSafeKey> {
+    pub fn derive_key(key: &[u8], salt: &[u8]) -> Result<LessSafeKey> {
         if salt.len() != SHA256_OUTPUT_LEN {
             return Err(anyhow!("Invalid salt length"));
         }
@@ -76,10 +79,11 @@ impl KeyGen {
         Ok(LessSafeKey::new(unbound))
     }
 
-    pub fn get_unique_nonce() -> Result<NonceBuffer, Unspecified> {
+    pub fn get_unique_nonce() -> Result<NonceBuffer> {
         let mut buf = NonceBuffer::default();
         let rng = SystemRandom::new();
-        rng.fill(&mut buf)?;
+        rng.fill(&mut buf)
+            .map(|_| anyhow!("Coult not generate nonce"));
         Ok(buf)
     }
 }
@@ -88,7 +92,7 @@ impl KeyGen {
 pub struct VaultManager {
     header: Header,
     body: Body,
-    master_hash: MasterBuffer,
+    master_hash: KeyBuffer,
 }
 
 #[derive(Default, Debug)]
@@ -100,7 +104,7 @@ pub struct Salts {
 }
 
 impl Salts {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> Result<Self> {
         let rng = SystemRandom::new();
 
         let mut instance = Self::default();
@@ -118,7 +122,7 @@ impl Salts {
 }
 
 impl VaultManager {
-    fn encrypt(&self) -> anyhow::Result<RPDB> {
+    fn encrypt(&self) -> Result<RPDB> {
         let key = KeyGen::derive_key(&self.master_hash, &self.header.master_salt)?;
         let nonce = Nonce::assume_unique_for_key(self.header.master_nonce.as_slice().try_into()?);
         let aad = Aad::from(self.header.write_to_bytes()?);
@@ -134,7 +138,7 @@ impl VaultManager {
         &mut self,
         path: P,
         master_key: String,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         let mut buf: Vec<u8> = vec![];
         let mut file = File::open(path)?;
         let bytes_read = file.read_to_end(&mut buf)?;
@@ -160,7 +164,7 @@ impl VaultManager {
         Ok(())
     }
 
-    pub fn regenerate(&mut self, salts: Salts, master_key: String) -> anyhow::Result<()> {
+    pub fn regenerate(&mut self, salts: Salts, master_key: String) -> Result<()> {
         self.header.signature = 0x3af9c42;
         self.header.master_salt = salts.master_salt.to_vec();
         self.header.version = 0x0001;
@@ -173,40 +177,78 @@ impl VaultManager {
         Ok(())
     }
 
-    pub fn save_new<P: AsRef<Path>>(&self, path: P) -> anyhow::Result<()> {
+    pub fn save_new<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let mut file = File::create_new(path)?;
         file.write(&self.encrypt()?.write_to_bytes()?)?;
         Ok(())
     }
 
-    pub fn add_directory(&mut self) -> anyhow::Result<()> {
-        unimplemented!()
+    pub fn add_directory(&mut self, name: &str) -> () {
+        let mut dir = Directory::new();
+        dir.name = name.into();
     }
 }
 
-pub struct DirectoryManager<'a> {
-    directory: &'a Directory,
+struct DirectoryManager<'a> {
+    dir: &'a mut Directory,
+    salt: &'a SaltBuffer,
+    key: &'a KeyBuffer,
 }
 
-// Generator for nonces of
-pub struct NonceGenerator {
-    salt: SaltBuffer,
+impl<'a> DirectoryManager<'a> {
+    pub fn new(dir: &'a mut Directory, salt: &'a SaltBuffer, key: &'a KeyBuffer) -> Self {
+        Self { dir, salt, key }
+    }
+
+    pub fn add_record(&mut self, name: &str, mut key_val: String) -> Result<()> {
+        let nonce_buf = generate_nonce_buf(self.salt, &self.dir.name, self.dir.records.len())?;
+        let key = KeyGen::derive_key(self.key, self.salt)?;
+        let nonce = Nonce::assume_unique_for_key(nonce_buf);
+        let aad = Aad::from(name);
+
+        let mut buf: Vec<u8> = key_val.into();
+        key.seal_in_place_append_tag(nonce, aad, &mut buf)
+            .map_err(|_| anyhow!("Could not seal key"))?;
+
+        let mut record = Record::new();
+        record.name = name.into();
+        record.nonce = String::from_utf8(nonce_buf.into())?;
+        record.data = buf.into();
+
+        self.dir.records.push(record);
+
+        Ok(())
+    }
+
+    fn encrypt_key(&self, key_val: String) -> Result<Vec<u8>> {
+        let nonce = Nonce::assume_unique_for_key(generate_nonce_buf(
+            self.salt,
+            &self.dir.name,
+            self.dir.records.len(),
+        )?);
+        let key = KeyGen::derive_key(self.key, self.salt)?;
+        let aad = Aad::from(&self.dir.name);
+
+        let mut buf: Vec<u8> = key_val.into();
+        key.seal_in_place_append_tag(nonce, aad, &mut buf)
+            .map_err(|_| anyhow!("Could not seal key"))?;
+
+        Ok(buf)
+    }
 }
 
-impl NonceGenerator {
-    pub fn new(salt: SaltBuffer) -> Self {
-        Self { salt }
-    }
-
-    pub fn generate(&self, directory_name: &str, index: u32) -> anyhow::Result<Nonce> {
-        let mut key_buf = NonceBuffer::default();
-        let mut salt: Vec<u8> = directory_name.as_bytes().to_vec();
-        salt.extend_from_slice(&self.salt);
-        Argon2::default()
-            .hash_password_into(&index.to_le_bytes(), &self.salt, &mut key_buf)
-            .map_err(|_| anyhow!("Could not generate argon2 hash"))?;
-        Ok(Nonce::assume_unique_for_key(key_buf))
-    }
+pub fn generate_nonce_buf(
+    salt: &SaltBuffer,
+    directory_name: &str,
+    index: usize,
+) -> Result<NonceBuffer> {
+    let mut key_buf = NonceBuffer::default();
+    let mut salt_buf: Vec<u8> = directory_name.as_bytes().to_vec();
+    salt_buf.extend_from_slice(salt);
+    Argon2::default()
+        .hash_password_into(&index.to_le_bytes(), salt, &mut key_buf)
+        .map_err(|_| anyhow!("Could not generate argon2 hash"))?;
+    Ok(key_buf)
 }
 
 #[cfg(test)]

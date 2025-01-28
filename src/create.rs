@@ -1,4 +1,7 @@
-use crate::commands::{Executable, Salts, VaultManager};
+use crate::{
+    commands::{Executable, Salts, VaultManager},
+    display::TerminalControl,
+};
 use anyhow::anyhow;
 use nix::sys::termios::{tcgetattr, tcsetattr, LocalFlags};
 use std::{
@@ -37,14 +40,13 @@ impl Executable for CreateCommand {
 }
 
 fn read_password() -> anyhow::Result<String> {
-    let in_fd = stdin();
-    let mut term = tcgetattr(&in_fd)?;
+    let term = TerminalControl::new()?;
+    term.disable_echo()?;
     print!("Please enter a master password: ");
-    term.local_flags &= !LocalFlags::ECHO;
-    tcsetattr(&in_fd, nix::sys::termios::SetArg::TCSANOW, &term)?;
     stdout().flush()?;
+
     let mut buf = String::new();
-    in_fd.read_line(&mut buf)?;
+    stdin().read_line(&mut buf)?;
     println!();
     Ok(buf)
 }
