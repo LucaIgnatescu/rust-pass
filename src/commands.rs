@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -177,8 +177,13 @@ impl VaultManager {
         Ok(())
     }
 
-    pub fn save_new<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let mut file = File::create_new(path)?;
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        if let Some(path) = path.as_ref().parent() {
+            if !path.exists() {
+                create_dir_all(path)?;
+            }
+        }
+        let mut file = File::create(path)?;
         file.write(&self.encrypt()?.write_to_bytes()?)?;
         Ok(())
     }
@@ -355,7 +360,7 @@ mod test {
             remove_file(&file_path).unwrap();
         }
 
-        vm.save_new(&file_path).unwrap();
+        vm.save(&file_path).unwrap();
 
         let mut vm1 = VaultManager::default();
         vm1.initialize_from_file(&file_path, String::from(master_password))

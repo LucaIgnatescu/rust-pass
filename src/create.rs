@@ -1,5 +1,5 @@
 use crate::{
-    commands::{Executable, Salts, VaultManager},
+    commands::{Executable, KeyGen, Salts, VaultManager},
     display::TerminalControl,
 };
 use anyhow::anyhow;
@@ -28,12 +28,8 @@ impl Executable for CreateCommand {
         }
 
         let buf = read_password()?;
-
-        let salts = Salts::new()?;
-
         let mut vm = VaultManager::default();
-
-        println!("vault: {:?}", vm);
+        vm.regenerate(buf)?;
 
         return Ok(());
     }
