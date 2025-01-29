@@ -15,7 +15,7 @@ pub enum Commands {
         name: String,
 
         #[arg(short, long, default_value = ".")]
-        path: String,
+        dir: String,
     },
     Open {
         #[arg(value_name = "PATH_TO_FILE")]

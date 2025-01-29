@@ -20,7 +20,6 @@ impl TerminalControl {
     pub fn disable_echo(&self) -> Result<()> {
         let in_fd = stdin();
         let mut term = tcgetattr(&in_fd)?;
-        print!("Please enter a master password: ");
         term.local_flags &= !LocalFlags::ECHO;
         Ok(tcsetattr(&in_fd, SetArg::TCSANOW, &term)?)
     }

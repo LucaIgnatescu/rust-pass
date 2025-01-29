@@ -7,7 +7,7 @@ use argon2::Argon2;
 use protobuf::{well_known_types::timestamp::Timestamp, Message, MessageField};
 use rand::distr::{Distribution, Uniform};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use ring::{
     aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN},
     digest::SHA256_OUTPUT_LEN,
@@ -33,7 +33,7 @@ pub trait Executable {
 
 pub fn command_factory(command: Commands) -> Box<dyn Executable> {
     match command {
-        Commands::Create { name, path } => Box::new(CreateCommand::new(name, path)),
+        Commands::Create { name, dir } => Box::new(CreateCommand::new(name, dir)),
         Commands::Open { file_path } => Box::new(OpenCommand::new(file_path)),
         Commands::Config => Box::new(ConfigCommand::new()),
     }
@@ -59,13 +59,10 @@ enum PasswordType {
 }
 
 static CHARS: [char; 67] = [
-    // a-z (26)
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z', // A-Z (26)
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
-    'T', 'U', 'V', 'W', 'X', 'Y', 'Z', // 0-9 (10)
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', // Special symbols (5)
-    '!', '#', '%', '$', '@',
+    't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+    'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4',
+    '5', '6', '7', '8', '9', '!', '#', '%', '$', '@',
 ];
 
 static ALPHA_BOUND: usize = 51;
@@ -219,7 +216,8 @@ impl VaultManager {
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         if let Some(path) = path.as_ref().parent() {
             if !path.exists() {
-                create_dir_all(path)?;
+                //create_dir_all(path)?; NOTE: may want to keep this
+                return Err(anyhow!("Invalid directory"));
             }
         }
         let mut file = File::create(path)?;
