@@ -5,6 +5,9 @@ use std::path::Path;
 use anyhow::{anyhow, Ok, Result};
 use argon2::Argon2;
 use protobuf::{well_known_types::timestamp::Timestamp, Message, MessageField};
+use rand::distr::{Distribution, Uniform};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use ring::{
     aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM, NONCE_LEN},
     digest::SHA256_OUTPUT_LEN,
@@ -49,8 +52,44 @@ fn erase<T: Into<Vec<u8>>>(s: T) {
     buffer.fill(0);
 }
 
+enum PasswordType {
+    Alpha,
+    AlphaNum,
+    All,
+}
+
+static CHARS: [char; 67] = [
+    // a-z (26)
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z', // A-Z (26)
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+    'T', 'U', 'V', 'W', 'X', 'Y', 'Z', // 0-9 (10)
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', // Special symbols (5)
+    '!', '#', '%', '$', '@',
+];
+
+static ALPHA_BOUND: usize = 51;
+static ALPHA_NUM_BOUND: usize = 61;
+static ALL_BOUND: usize = 66;
+
 impl KeyGen {
-    pub fn encrypt_master(mut master_key: String, salt: &SaltBuffer) -> Result<KeyBuffer> {
+    pub fn generate_password(len: usize, pwd_type: PasswordType) -> Result<String> {
+        let rng = StdRng::from_os_rng();
+
+        type P = PasswordType;
+        let distrib = match pwd_type {
+            P::Alpha => Uniform::new_inclusive(0, ALPHA_BOUND),
+            P::AlphaNum => Uniform::new_inclusive(0, ALPHA_NUM_BOUND),
+            P::All => Uniform::new_inclusive(0, ALL_BOUND),
+        }?;
+        let buf: String = distrib
+            .sample_iter(rng)
+            .take(len)
+            .map(|i| CHARS[i])
+            .collect();
+        Ok(buf)
+    }
+    pub fn encrypt_master(master_key: String, salt: &SaltBuffer) -> Result<KeyBuffer> {
         let mut key = SaltBuffer::default();
         Argon2::default()
             .hash_password_into(&master_key.as_bytes(), salt, &mut key)
@@ -344,7 +383,7 @@ pub fn generate_nonce_buf(
 
 #[cfg(test)]
 mod test {
-    use super::VaultManager;
+    use super::{KeyGen, PasswordType, VaultManager};
     use std::{env, fs::remove_file};
 
     #[test]
@@ -384,5 +423,16 @@ mod test {
         vm.remove_key(dir_name, "aaa").unwrap();
         assert!(vm.get_key(dir_name, "aaa").is_err());
         vm.remove_directory(dir_name).unwrap();
+    }
+
+    #[test]
+    fn test_pwdgen() {
+        let key1 = KeyGen::generate_password(10, PasswordType::Alpha).unwrap();
+        assert!(key1.chars().all(char::is_alphabetic));
+        let key2 = KeyGen::generate_password(10, PasswordType::AlphaNum).unwrap();
+        assert!(key2.chars().all(char::is_alphanumeric));
+        let key3 = KeyGen::generate_password(10, PasswordType::All).unwrap();
+        let key4 = KeyGen::generate_password(10, PasswordType::All).unwrap();
+        assert_ne!(key3, key4);
     }
 }

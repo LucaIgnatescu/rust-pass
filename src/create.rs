@@ -1,9 +1,8 @@
 use crate::{
-    commands::{Executable, KeyGen, Salts, VaultManager},
+    commands::{Executable, VaultManager},
     display::TerminalControl,
 };
-use anyhow::anyhow;
-use nix::sys::termios::{tcgetattr, tcsetattr, LocalFlags};
+use anyhow::{anyhow, Result};
 use std::{
     io::{stdin, stdout, Write},
     path::Path,
@@ -21,7 +20,7 @@ impl CreateCommand {
 }
 
 impl Executable for CreateCommand {
-    fn execute(&self) -> anyhow::Result<()> {
+    fn execute(&self) -> Result<()> {
         let file_path = Path::new(&self.path);
         if file_path.is_file() {
             return Err(anyhow!("Could not create database - file already exists!"));
@@ -30,12 +29,12 @@ impl Executable for CreateCommand {
         let buf = read_password()?;
         let mut vm = VaultManager::default();
         vm.regenerate(buf)?;
-
+        println!("Vault crated");
         return Ok(());
     }
 }
 
-fn read_password() -> anyhow::Result<String> {
+fn read_password() -> Result<String> {
     let term = TerminalControl::new()?;
     term.disable_echo()?;
     print!("Please enter a master password: ");
