@@ -1,13 +1,9 @@
 use crate::{
     commands::{Executable, VaultManager},
-    display::TerminalControl,
+    display::InputReader,
 };
 use anyhow::{anyhow, Result};
-use std::{
-    io::{stdin, stdout, Write},
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{path::PathBuf, str::FromStr};
 
 pub struct CreateCommand {
     name: String,
@@ -23,7 +19,7 @@ impl CreateCommand {
 impl Executable for CreateCommand {
     fn execute(&self) -> Result<()> {
         let path = self.generate_path()?;
-        let buf = read_password()?;
+        let buf = InputReader::read_password()?;
         let mut vm = VaultManager::default();
         vm.regenerate(buf)?;
         vm.save(path)?;
@@ -42,16 +38,4 @@ impl CreateCommand {
         buf.push(format!("{}.rpdb", &self.name));
         Ok(buf)
     }
-}
-
-fn read_password() -> Result<String> {
-    let term = TerminalControl::new()?;
-    term.disable_echo()?;
-    print!("Please enter a master password: ");
-    stdout().flush()?;
-
-    let mut buf = String::new();
-    stdin().read_line(&mut buf)?;
-    println!();
-    Ok(buf)
 }

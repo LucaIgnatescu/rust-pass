@@ -1,6 +1,6 @@
 use anyhow::Result;
 use nix::sys::termios::{tcgetattr, tcsetattr, LocalFlags, SetArg, Termios};
-use std::io::stdin;
+use std::io::{stdin, stdout, Write};
 
 pub fn display_error(e: anyhow::Error) {
     println!("Error:{}", e);
@@ -8,6 +8,32 @@ pub fn display_error(e: anyhow::Error) {
 
 pub struct TerminalControl {
     term: Termios,
+}
+
+pub struct InputReader;
+
+impl InputReader {
+    pub fn read_password() -> Result<String> {
+        let term = TerminalControl::new()?;
+        term.disable_echo()?;
+        print!("Please enter a master password: ");
+        stdout().flush()?;
+
+        let mut buf = String::new();
+        stdin().read_line(&mut buf)?;
+        println!();
+        Ok(buf)
+    }
+
+    pub fn read_command() -> Result<String> {
+        print!("  >;");
+        stdout().flush()?;
+
+        let mut buf = String::new();
+        stdin().read_line(&mut buf)?;
+
+        Ok(buf)
+    }
 }
 
 impl TerminalControl {
