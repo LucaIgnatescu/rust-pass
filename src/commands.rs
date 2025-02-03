@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -244,58 +245,53 @@ impl VaultManager {
         Err(anyhow!("Directory does not exist"))
     }
 
-    pub fn add_key(&mut self, dir_name: &str, key_name: &str, key_val: &str) -> Result<()> {
+    pub fn open_dir(&mut self, dir_name: &str) -> Result<DirectoryManager> {
         if let Some(dir) = self
             .body
             .directories
             .iter_mut()
             .find(|dir| dir.name == dir_name)
         {
-            let mut dm = DirectoryManager::new(
+            return Ok(DirectoryManager::new(
                 dir,
                 self.body.salt.as_slice().try_into()?,
                 &self.master_hash,
-            );
-            return dm.add_record(key_name, key_val);
+            ));
         }
-        Err(anyhow!("Could not locate directory"))
+        return Err(anyhow!("Could not find directory"));
     }
 
-    pub fn remove_key(&mut self, dir_name: &str, key_name: &str) -> Result<()> {
-        if let Some(dir) = self
-            .body
-            .directories
-            .iter_mut()
-            .find(|dir| dir.name == dir_name)
-        {
-            let mut dm = DirectoryManager::new(
-                dir,
-                self.body.salt.as_slice().try_into()?,
-                &self.master_hash,
-            );
-            return dm.remove_record(key_name);
-        }
-        Err(anyhow!("Could not locate directory"))
-    }
+    //pub fn add_key(&mut self, dm: &DirectoryManager, key_name: &str, key_val: &str) -> Result<()> {
+    //    match &mut self.dm {
+    //        None => Err(anyhow!("No directory currently opened")),
+    //        Some(dm) => dm.add_record(key_name, key_val),
+    //    }
+    //}
+    //
+    //pub fn remove_key(&mut self, key_name: &str) -> Result<()> {
+    //    match &mut self.dm {
+    //        None => Err(anyhow!("No directory currently opened")),
+    //        Some(dm) => dm.remove_record(key_name),
+    //    }
+    //}
+    //
+    //pub fn get_key(&mut self, key_name: &str) -> Result<String> {
+    //    match &mut self.dm {
+    //        None => Err(anyhow!("No directory currently opened")),
+    //        Some(dm) => dm.get_record(key_name),
+    //    }
+    //}
 
-    pub fn get_key(&mut self, dir_name: &str, key_name: &str) -> Result<String> {
-        if let Some(dir) = self
-            .body
+    pub fn get_directories(&mut self) -> Vec<&str> {
+        self.body
             .directories
-            .iter_mut()
-            .find(|dir| dir.name == dir_name)
-        {
-            let mut dm = DirectoryManager::new(
-                dir,
-                self.body.salt.as_slice().try_into()?,
-                &self.master_hash,
-            );
-            return dm.get_record(key_name);
-        }
-        Err(anyhow!("Could not locate directory"))
+            .iter()
+            .map(|dir| dir.name.as_str())
+            .collect()
     }
 }
 
+#[derive(Debug, PartialEq)]
 struct DirectoryManager<'a> {
     dir: &'a mut Directory,
     salt: &'a SaltBuffer,
@@ -349,6 +345,7 @@ impl<'a> DirectoryManager<'a> {
 
         Ok(String::from_utf8(decrypted.to_vec())?)
     }
+
     pub fn remove_record(&mut self, name: &str) -> Result<()> {
         let index = self
             .dir
@@ -362,6 +359,14 @@ impl<'a> DirectoryManager<'a> {
 
     pub fn rename(&mut self, new_name: &str) {
         self.dir.name = new_name.into();
+    }
+
+    pub fn get_record_names(&self) -> Vec<&str> {
+        self.dir
+            .records
+            .iter()
+            .map(|record| record.name.as_str())
+            .collect()
     }
 }
 
@@ -412,14 +417,14 @@ mod test {
         let mut vm = VaultManager::default();
         vm.regenerate(String::from(master_password)).unwrap();
         vm.add_directory(&dir_name);
-        vm.add_key(&dir_name, "aaa", "abc").unwrap();
+        let mut dm = vm.open_dir(&dir_name).unwrap();
+        dm.add_record("aaa", "abc").unwrap();
 
-        let buf = vm.get_key(dir_name, "aaa").unwrap();
-
+        let buf = dm.get_record("aaa").unwrap();
         assert_eq!(buf, "abc");
 
-        vm.remove_key(dir_name, "aaa").unwrap();
-        assert!(vm.get_key(dir_name, "aaa").is_err());
+        dm.remove_record("aaa").unwrap();
+        assert!(dm.get_record("aaa").is_err());
         vm.remove_directory(dir_name).unwrap();
     }
 

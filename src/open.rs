@@ -30,21 +30,32 @@ impl Executable for OpenCommand {
 
 trait ReplCommand: Sized {
     fn parse(args: &[&str]) -> Result<Self>;
-    fn execute(&self, state: &mut ReplState) -> Result<()>;
-    fn help(&self);
+    fn execute(&self, repl: &mut Repl) -> Result<()>;
+}
+
+macro_rules! help {
+    () => {
+        anyhow!("Incorrect usage of command. Try running help.")
+    };
 }
 
 struct LSCommand;
 
 impl ReplCommand for LSCommand {
-    fn execute(&self, state: &mut ReplState) -> Result<()> {
-        unimplemented!()
+    fn execute(&self, repl: &mut Repl) -> Result<()> {
+        //let directories = match repl.curr_dir {
+        //    None => repl.vm.get_directories(),
+        //    Some(dir) => {}
+        //}
+        Ok(())
     }
-    fn help(&self) -> () {
-        unimplemented!()
-    }
+
     fn parse(args: &[&str]) -> Result<Self> {
-        unimplemented!()
+        const NARGS: usize = 0;
+        if args.len() != NARGS {
+            return Err(help!());
+        }
+        Ok(Self)
     }
 }
 
@@ -52,15 +63,40 @@ struct MKDirCommand {
     dir_name: String,
 }
 
-impl ReplCommand for MKDirCommand {
-    fn execute(&self, state: &mut ReplState) -> Result<()> {
-        unimplemented!()
+impl MKDirCommand {
+    fn validate_dir_name(dir_name: &str) -> Result<&str> {
+        if !dir_name.chars().all(|c| c.is_alphanumeric()) {
+            return Err(anyhow!(
+                "Directory name must only consist of alphanumeric characters"
+            ));
+        }
+
+        if dir_name
+            .chars()
+            .next()
+            .ok_or_else(|| anyhow!("Directory name cannot be empty"))?
+            .is_numeric()
+        {
+            return Err(anyhow!("Directory name cannot start with a number"));
+        }
+
+        Ok(dir_name)
     }
-    fn help(&self) -> () {
+}
+
+impl ReplCommand for MKDirCommand {
+    fn execute(&self, repl: &mut Repl) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
-        unimplemented!()
+        const NARGS: usize = 2;
+        if args.len() != NARGS {
+            return Err(help!());
+        }
+        let dir_name = Self::validate_dir_name(args[0])?;
+        Ok(Self {
+            dir_name: dir_name.to_string(),
+        })
     }
 }
 
@@ -69,14 +105,19 @@ struct GetCommand {
 }
 
 impl ReplCommand for GetCommand {
-    fn execute(&self, state: &mut ReplState) -> Result<()> {
-        unimplemented!()
-    }
-    fn help(&self) -> () {
+    fn execute(&self, repl: &mut Repl) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
-        unimplemented!()
+        const NARGS: usize = 1;
+
+        if args.len() != NARGS {
+            return Err(help!());
+        }
+
+        Ok(Self {
+            key_name: args[0].to_string(),
+        })
     }
 }
 
@@ -85,28 +126,36 @@ struct AddCommand {
 }
 
 impl ReplCommand for AddCommand {
-    fn execute(&self, state: &mut ReplState) -> Result<()> {
-        unimplemented!()
-    }
-    fn help(&self) -> () {
+    fn execute(&self, repl: &mut Repl) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
-        unimplemented!()
+        const NARGS: usize = 1;
+
+        if args.len() != NARGS {
+            return Err(help!());
+        }
+
+        Ok(Self {
+            key_name: args[0].to_string(),
+        })
     }
 }
 
 struct ExitCommand;
 
 impl ReplCommand for ExitCommand {
-    fn execute(&self, state: &mut ReplState) -> Result<()> {
-        unimplemented!()
-    }
-    fn help(&self) -> () {
+    fn execute(&self, repl: &mut Repl) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
-        unimplemented!()
+        const NARGS: usize = 0;
+
+        if args.len() != NARGS {
+            return Err(help!());
+        }
+
+        Ok(Self {})
     }
 }
 
@@ -133,8 +182,7 @@ macro_rules! delegate {
 }
 
 impl ReplCommand for ReplCommandType {
-    delegate!(self, execute, state: &mut ReplState => Result<()>);
-    delegate!(self, help, => ());
+    delegate!(self, execute, repl: &mut Repl => Result<()>);
 
     fn parse(args: &[&str]) -> Result<Self> {
         if args.is_empty() {
@@ -142,41 +190,38 @@ impl ReplCommand for ReplCommandType {
         }
 
         Ok(match args[0] {
-            "ls" => Self::LS(LSCommand::parse(args)?),
-            "mkdir" => Self::MKDIR(MKDirCommand::parse(args)?),
-            "get" => Self::GET(GetCommand::parse(args)?),
-            "add" => Self::ADD(AddCommand::parse(args)?),
-            "exit" => Self::EXIT(ExitCommand::parse(args)?),
+            "ls" => Self::LS(LSCommand::parse(&args[1..])?),
+            "mkdir" => Self::MKDIR(MKDirCommand::parse(&args[1..])?),
+            "get" => Self::GET(GetCommand::parse(&args[1..])?),
+            "add" => Self::ADD(AddCommand::parse(&args[1..])?),
+            "exit" => Self::EXIT(ExitCommand::parse(&args[1..])?),
             _ => return Err(anyhow!("Invalid command")),
         })
     }
 }
 
-#[derive(Default)]
-struct ReplState {
-    running: bool,
-}
-
 struct Repl {
     vm: VaultManager,
-    state: ReplState,
+    running: bool,
+    curr_dir: Option<String>,
 }
 
 impl Repl {
     pub fn new(vm: VaultManager) -> Self {
         Self {
             vm,
-            state: ReplState::default(),
+            running: false,
+            curr_dir: None,
         }
     }
 
     pub fn start(&mut self) {
-        self.state.running = true;
-        while self.state.running {
-            let buf = InputReader::read_command().unwrap();
+        self.running = true;
+        while self.running {
+            let buf = InputReader::read_command().unwrap(); // FIX: don't use unwrap
             let contents: Vec<&str> = buf.split_whitespace().collect();
             let command = ReplCommandType::parse(&contents).unwrap();
-            command.execute(&mut self.state).unwrap();
+            command.execute(self).unwrap();
         }
     }
 }
