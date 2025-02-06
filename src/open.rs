@@ -1,5 +1,5 @@
 use crate::{
-    commands::{Executable, VaultManager},
+    commands::{DirectoryManager, Executable, VaultManager},
     display::InputReader,
 };
 use anyhow::{anyhow, Result};
@@ -28,9 +28,25 @@ impl Executable for OpenCommand {
     }
 }
 
+fn repl(mut vm: VaultManager) {
+    let mut running = false;
+    let mut dm: Option<DirectoryManager> = None;
+    while running {
+        let buf = InputReader::read_command().unwrap(); // FIX: don't use unwrap
+        let contents: Vec<&str> = buf.split_whitespace().collect();
+        let command = ReplCommandType::parse(&contents).unwrap();
+        command.execute(&mut vm, &mut dm, &mut running).unwrap();
+    }
+}
+
 trait ReplCommand: Sized {
     fn parse(args: &[&str]) -> Result<Self>;
-    fn execute(&self, repl: &mut Repl) -> Result<()>;
+    fn execute(
+        &self,
+        vm: &mut VaultManager,
+        dm: &mut Option<DirectoryManager>,
+        running: &mut bool,
+    ) -> Result<()>;
 }
 
 macro_rules! help {
@@ -42,11 +58,17 @@ macro_rules! help {
 struct LSCommand;
 
 impl ReplCommand for LSCommand {
-    fn execute(&self, repl: &mut Repl) -> Result<()> {
+    fn execute(
+        &self,
+        vm: &mut VaultManager,
+        dm: &mut Option<DirectoryManager>,
+        running: &mut bool,
+    ) -> Result<()> {
         //let directories = match repl.curr_dir {
         //    None => repl.vm.get_directories(),
         //    Some(dir) => {}
         //}
+        //
         Ok(())
     }
 
@@ -85,7 +107,12 @@ impl MKDirCommand {
 }
 
 impl ReplCommand for MKDirCommand {
-    fn execute(&self, repl: &mut Repl) -> Result<()> {
+    fn execute(
+        &self,
+        vm: &mut VaultManager,
+        dm: &mut Option<DirectoryManager>,
+        running: &mut bool,
+    ) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
@@ -94,6 +121,7 @@ impl ReplCommand for MKDirCommand {
             return Err(help!());
         }
         let dir_name = Self::validate_dir_name(args[0])?;
+
         Ok(Self {
             dir_name: dir_name.to_string(),
         })
@@ -105,7 +133,12 @@ struct GetCommand {
 }
 
 impl ReplCommand for GetCommand {
-    fn execute(&self, repl: &mut Repl) -> Result<()> {
+    fn execute(
+        &self,
+        vm: &mut VaultManager,
+        dm: &mut Option<DirectoryManager>,
+        running: &mut bool,
+    ) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
@@ -126,7 +159,12 @@ struct AddCommand {
 }
 
 impl ReplCommand for AddCommand {
-    fn execute(&self, repl: &mut Repl) -> Result<()> {
+    fn execute(
+        &self,
+        vm: &mut VaultManager,
+        dm: &mut Option<DirectoryManager>,
+        running: &mut bool,
+    ) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
@@ -145,7 +183,12 @@ impl ReplCommand for AddCommand {
 struct ExitCommand;
 
 impl ReplCommand for ExitCommand {
-    fn execute(&self, repl: &mut Repl) -> Result<()> {
+    fn execute(
+        &self,
+        vm: &mut VaultManager,
+        dm: &mut Option<DirectoryManager>,
+        running: &mut bool,
+    ) -> Result<()> {
         unimplemented!()
     }
     fn parse(args: &[&str]) -> Result<Self> {
@@ -169,7 +212,7 @@ enum ReplCommandType {
 
 macro_rules! delegate {
     (self, $method: ident, $($arg:ident : $arg_type:ty),* => $ret_type:ty) => {
-        fn $method(&self, $($arg: $arg_type)*) -> $ret_type{
+        fn $method(&self, $($arg: $arg_type,)*) -> $ret_type{
             match self{
                 ReplCommandType::LS(cmd) => cmd.$method($($arg), *),
                 ReplCommandType::MKDIR(cmd) => cmd.$method($($arg), *),
@@ -182,7 +225,7 @@ macro_rules! delegate {
 }
 
 impl ReplCommand for ReplCommandType {
-    delegate!(self, execute, repl: &mut Repl => Result<()>);
+    delegate!(self, execute, vm: &mut VaultManager, dm: &mut Option<DirectoryManager>, running: &mut bool => Result<()>);
 
     fn parse(args: &[&str]) -> Result<Self> {
         if args.is_empty() {
@@ -197,31 +240,5 @@ impl ReplCommand for ReplCommandType {
             "exit" => Self::EXIT(ExitCommand::parse(&args[1..])?),
             _ => return Err(anyhow!("Invalid command")),
         })
-    }
-}
-
-struct Repl {
-    vm: VaultManager,
-    running: bool,
-    curr_dir: Option<String>,
-}
-
-impl Repl {
-    pub fn new(vm: VaultManager) -> Self {
-        Self {
-            vm,
-            running: false,
-            curr_dir: None,
-        }
-    }
-
-    pub fn start(&mut self) {
-        self.running = true;
-        while self.running {
-            let buf = InputReader::read_command().unwrap(); // FIX: don't use unwrap
-            let contents: Vec<&str> = buf.split_whitespace().collect();
-            let command = ReplCommandType::parse(&contents).unwrap();
-            command.execute(self).unwrap();
-        }
     }
 }

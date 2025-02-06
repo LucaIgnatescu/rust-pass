@@ -261,27 +261,6 @@ impl VaultManager {
         return Err(anyhow!("Could not find directory"));
     }
 
-    //pub fn add_key(&mut self, dm: &DirectoryManager, key_name: &str, key_val: &str) -> Result<()> {
-    //    match &mut self.dm {
-    //        None => Err(anyhow!("No directory currently opened")),
-    //        Some(dm) => dm.add_record(key_name, key_val),
-    //    }
-    //}
-    //
-    //pub fn remove_key(&mut self, key_name: &str) -> Result<()> {
-    //    match &mut self.dm {
-    //        None => Err(anyhow!("No directory currently opened")),
-    //        Some(dm) => dm.remove_record(key_name),
-    //    }
-    //}
-    //
-    //pub fn get_key(&mut self, key_name: &str) -> Result<String> {
-    //    match &mut self.dm {
-    //        None => Err(anyhow!("No directory currently opened")),
-    //        Some(dm) => dm.get_record(key_name),
-    //    }
-    //}
-
     pub fn get_directories(&mut self) -> Vec<&str> {
         self.body
             .directories
@@ -292,7 +271,7 @@ impl VaultManager {
 }
 
 #[derive(Debug, PartialEq)]
-struct DirectoryManager<'a> {
+pub struct DirectoryManager<'a> {
     dir: &'a mut Directory,
     salt: &'a SaltBuffer,
     master_key: &'a KeyBuffer,

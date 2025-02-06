@@ -26,7 +26,7 @@ impl InputReader {
     }
 
     pub fn read_command() -> Result<String> {
-        print!("  >;");
+        print!("> ");
         stdout().flush()?;
 
         let mut buf = String::new();
